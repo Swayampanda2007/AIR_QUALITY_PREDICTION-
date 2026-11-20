@@ -1,0 +1,74 @@
+Short-Term Air Quality Prediction: Experiment Report
+==========================================================
+
+Dataset details
+Input file: dataset\processed\combined_air_quality.csv
+Source rows: 420,768
+Rows after valid datetime/station checks: 420,768
+Stations: 12
+Source date range: 2013-03-01 00:00:00 to 2017-02-28 23:00:00
+Prepared rows with verified next-hour targets: 412,017
+Invalid datetime rows removed: 0
+Rows with missing/blank station removed: 0
+Duplicate station/datetime rows: 0
+Non-hourly consecutive station intervals: 0
+Missing hourly slots within station records: 0
+Invalid sensor cells marked missing: 0
+No high measurements were clipped or removed.
+Invalid sensor cells by feature (non-numeric / non-finite / negative):
+  PM2.5: 0 / 0 / 0
+  PM10: 0 / 0 / 0
+  SO2: 0 / 0 / 0
+  NO2: 0 / 0 / 0
+  CO: 0 / 0 / 0
+  O3: 0 / 0 / 0
+  TEMP: 0 / 0 / 0
+  PRES: 0 / 0 / 0
+  DEWP: 0 / 0 / 0
+  RAIN: 0 / 0 / 0
+  WSPM: 0 / 0 / 0
+Rows without a valid next-hour target: 8,751
+
+Target and leakage checks
+Target: PM2.5_next_hour from PM2.5 exactly one hour later at the same station.
+Target alignment was recomputed against the combined source and verified.
+Datetime and target columns are excluded from model input features.
+Input features: PM2.5, PM10, SO2, NO2, CO, O3, TEMP, PRES, DEWP, RAIN, WSPM, station
+Numeric features use median imputation; station uses most-frequent imputation and one-hot encoding.
+Each imputer/encoder is inside the model pipeline and is fitted on training data only.
+
+Chronological train/test split
+One shared target-time cutoff is used for all stations; records are never shuffled.
+Training labels end before the first holdout target time.
+Training fraction of unique target timestamps: 80%
+Cutoff (first test target timestamp): 2016-05-12 09:00:00
+Training records: 329,466 (feature times 2013-03-01 00:00:00 to 2016-05-12 07:00:00; target times 2013-03-01 01:00:00 to 2016-05-12 08:00:00)
+Test records: 82,551 (feature times 2016-05-12 08:00:00 to 2017-02-28 22:00:00; target times 2016-05-12 09:00:00 to 2017-02-28 23:00:00)
+Common evaluation records (current PM2.5 observed): 81,949
+
+Model configurations
+- Linear Regression: LinearRegression(fit_intercept=True); median-impute and standardize numeric features.
+- Random Forest Regressor: 100 trees, max_depth=16, min_samples_leaf=5, random_state=42, n_jobs=-1.
+- Gradient Boosting Regressor: 100 estimators, learning_rate=0.05, max_depth=3, random_state=42.
+- Persistence Baseline: Predict next-hour PM2.5 as current-hour PM2.5.
+
+Holdout metrics
+All models are evaluated on the same test rows; persistence requires observed current PM2.5.
+                      Model     MAE    RMSE     R2  Evaluation Samples
+          Linear Regression 10.2360 19.1721 0.9473               81949
+    Random Forest Regressor  9.9087 18.7983 0.9493               81949
+Gradient Boosting Regressor 10.0306 18.9679 0.9484               81949
+       Persistence Baseline 10.0921 19.5677 0.9451               81949
+
+Best trained model by lowest holdout RMSE: Random Forest Regressor
+Best overall result by lowest holdout RMSE (including persistence): Random Forest Regressor
+The best trained model pipeline, including its fitted preprocessing, is saved in models/.
+Time-series plot station: Aotizhongxin
+
+Important limitations
+- The evaluation uses a single chronological holdout from this Beijing dataset; it is not external validation.
+- The model predicts one hour ahead using measurements available at the current hour. It does not forecast future weather or pollutant inputs.
+- Persistence metrics omit test rows where current PM2.5 is missing so every model is compared on the same examples.
+- Missing numeric feature values are imputed with training-set medians; this can underrepresent unusual conditions.
+- Internal timestamp gaps are reported, and pairs crossing a gap are excluded; missing data before the first or after the last recorded hour cannot be detected.
+- Feature importance is model-specific and does not establish causal relationships.

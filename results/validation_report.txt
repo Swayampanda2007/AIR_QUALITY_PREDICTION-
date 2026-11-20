@@ -1,0 +1,137 @@
+Research Validity Review
+Air Quality Prediction
+Audit date: 2026-11-15
+
+Scope
+-----
+Reviewed src/preprocess.py, src/experiment.py, main.py, the prepared dataset,
+saved test predictions, model comparison table, experiment report, and saved
+best-model pipeline. Checks were independently performed against the stored
+data and results. The model was loaded for verification but not retrained.
+No experiment metrics, predictions, datasets, or model files were changed.
+
+Overall assessment
+------------------
+The implemented target construction, chronological split, model preprocessing,
+common-sample evaluation, persistence baseline, and metric calculations pass
+the requested checks. No target leakage or metric calculation defect was found.
+
+Checks performed
+----------------
+
+1. Next-hour target and station isolation: PASS
+   - Independently sorted the combined observations by station and datetime,
+     then recomputed PM2.5_next_hour with a station-grouped shift.
+   - Verified every one of the 412,017 prepared targets equals PM2.5 from the
+     same station exactly one hour later. No target crossed station boundaries.
+   - The combined data has 420,768 rows across 12 stations. There are no
+     duplicate station/datetime keys or internal hourly gaps.
+   - The 8,751 rows without a valid target were excluded; the prepared target
+     column has no missing values.
+
+2. Chronological train/test split: PASS
+   - src/experiment.py splits on target timestamps, without shuffling.
+   - The cutoff is 2016-05-12 09:00. Training has 329,466 records with target
+     times ending at 2016-05-12 08:00; testing has 82,551 records with target
+     times beginning at 2016-05-12 09:00.
+   - Checked all 12 stations: training target times precede test target times.
+
+3. Future information and target leakage: PASS, with an operational condition
+   - Model inputs are current-hour PM2.5, PM10, SO2, NO2, CO, O3, TEMP, PRES,
+     DEWP, RAIN, WSPM, and station. Datetime and PM2.5_next_hour are excluded.
+   - The target is independently verified to be the following hour. No
+     future-hour observations are used as model inputs.
+   - This forecast setup assumes the current-hour pollutant and meteorological
+     measurements are available when the next-hour prediction is issued.
+
+4. Imputation and categorical encoding: PASS
+   - Numeric median imputation, the linear model's scaling, and station
+     imputation/one-hot encoding are inside sklearn Pipelines.
+   - Source code fits each pipeline on x_train before predicting on x_test.
+   - Independently checked the saved Random Forest pipeline: its numeric
+     imputer statistics match training-period medians, and its station encoder
+     categories match the training stations.
+   - Missing feature values are retained until pipeline transformation; no
+     target values are imputed.
+
+   Prepared feature missing counts (target has zero missing values):
+     PM2.5 2,837; PM10 2,217; SO2 5,132; NO2 8,191; CO 16,604; O3 9,518;
+     TEMP 395; PRES 390; DEWP 400; RAIN 387; WSPM 315.
+
+5. Identical evaluation samples: PASS
+   - All four metric rows use the same 81,949 test observations.
+   - The full test split contains 82,551 observations. The 602 rows without a
+     current PM2.5 value are excluded from every model's metrics so the
+     persistence baseline and trained models are compared on identical rows.
+   - The saved prediction file contains all four predictions for each common
+     evaluation observation.
+
+6. Persistence baseline: PASS
+   - Independently confirmed each saved baseline prediction equals that row's
+     current PM2.5 value. The next-hour PM2.5 is the observed target.
+
+7. Evaluation metrics: PASS
+   - Independently recomputed MAE, RMSE (square root of mean squared error),
+     and R² from saved actual/predicted values. They match
+     results/model_comparison.csv to floating-point tolerance.
+
+     Model                         MAE       RMSE       R2
+     Linear Regression           10.236     19.172    0.9473
+     Random Forest Regressor      9.909     18.798    0.9493
+     Gradient Boosting Regressor 10.031     18.968    0.9484
+     Persistence Baseline        10.092     19.568    0.9451
+
+8. Tree feature importance: PASS, with a reproducibility limitation
+   - The graph code pairs each fitted tree model's feature_importances_ with
+     names returned by that same fitted preprocessing pipeline's
+     get_feature_names_out().
+   - Independently checked the saved Random Forest: transformed feature names
+     and importances have matching lengths; importances are finite,
+     non-negative, and sum to approximately one.
+   - The Gradient Boosting model itself is not separately serialized, so its
+     importance values cannot be independently regenerated from a saved model
+     without fitting it again. The generated graph and implementation were
+     checked.
+
+Research limitations and recommended fixes
+-------------------------------------------
+1. Holdout-based model selection:
+   Random Forest is selected as the winner using the same test-set RMSE that is
+   reported. This is not feature leakage, but selecting the winner on the final
+   test set introduces model-selection optimism; the reported winner's test
+   score is no longer a fully independent final estimate.
+   Recommended fix for a future, separately recorded experiment: select the
+   model using a chronological validation period or rolling-origin validation
+   within the training period, refit the selected model on the full training
+   period, and use the latest 20% only once for final evaluation. Existing
+   results were not changed.
+
+2. Scope of generalization:
+   This is one chronological holdout from the same 12 Beijing stations and
+   2013-2017 dataset. It does not establish performance at unseen stations,
+   other cities, or later periods. Consider a separate station-held-out or
+   external-time evaluation if those are research claims.
+
+3. Forecast input availability:
+   The experiment uses current-hour pollutant and meteorological readings.
+   Confirm these readings would be available at the intended forecast issue
+   time. The pipeline does not forecast future weather or pollutant inputs.
+
+4. Feature-importance interpretation:
+   Tree impurity importance is model-specific and can favor continuous or
+   high-cardinality features. It describes the fitted models, not causality or
+   statistical significance. Consider permutation importance on held-out data
+   as a complementary analysis.
+
+5. Single evaluation split:
+   No confidence intervals or repeated rolling-origin estimates are reported.
+   Treat small score differences as descriptive rather than evidence of a
+   statistically reliable advantage.
+
+Conclusion
+----------
+The requested implementation checks pass for the stored experiment. Random
+Forest has the lowest RMSE in this comparison, but its selection on the same
+holdout is a limitation to address before presenting that score as an
+independent final estimate. This review did not rerun training or modify
+experimental outputs.
